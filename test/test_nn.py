@@ -10162,6 +10162,28 @@ class TestNNDeviceType(NNTestCase):
         )
         torch.testing.assert_close(output_f32, output_ui8, atol=1, rtol=0)
 
+    @parametrize_test("memory_format", [torch.contiguous_format, torch.channels_last])
+    @parametrize_test("mode", ["bilinear", "bicubic", "lanczos"])
+    @parametrize_test("antialias", [True, False])
+    @parametrize_test("dtype", [torch.uint8, torch.float32])
+    @parametrize_test("num_channels", [1, 3])
+    @parametrize_test("output_size", [4, 17])
+    def test_upsamplingBiMode2d_size_one_dim(self, device, memory_format, mode, antialias, dtype, num_channels, output_size):
+        # Non-regression test for https://github.com/pytorch/pytorch/issues/200568
+        if (dtype == torch.uint8 or mode == "lanczos") and torch.device(device).type != "cpu":
+            raise SkipTest("uint8 and lanczos are only supported on CPU")
+        if mode == "lanczos" and not antialias:
+            raise SkipTest("Lanczos mode requires antialias=True")
+
+        torch.manual_seed(0)
+        input = torch.randint(0, 256, size=(2, num_channels, 9, 1), device=device).to(dtype)
+        input = input.contiguous(memory_format=memory_format)
+        # Resizing H of a width-1 image must match any column of the same resize on a wider image
+        wide_input = input.expand(-1, -1, -1, 4).contiguous(memory_format=memory_format)
+        expected = F.interpolate(wide_input, size=(output_size, 4), mode=mode, antialias=antialias)[..., :1]
+        output = F.interpolate(input, size=(output_size, 1), mode=mode, antialias=antialias)
+        self.assertEqual(output, expected)
+
     def test_upsamplingBicubic2d_correctness(self, device):
         # test output against known input: align_corners=False result must match opencv
         in_t = torch.arange(8., device=device).view(1, 2, 2, 2)

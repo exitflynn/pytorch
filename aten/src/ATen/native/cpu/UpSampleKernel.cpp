@@ -1660,7 +1660,15 @@ void upsample_separable_1d(
           } else {
             // Strides are : X Y | 0 0 0 0 0 (Channels first)
             // Strides are : X X | 0 0 0 0 0 (Channels last)
-            basic_loop_separable_1d_vertical<scalar_t>(data, strides, n, weights_precision);
+            // When size-1 dims are coalesced away (e.g. W == 1), the interpolated
+            // dim can become the inner loop dim and the indices/weights strides
+            // are non-zero. The vertical loop assumes zero strides, so fall back
+            // to the horizontal loop which handles arbitrary strides.
+            if (is_zero_stride<5>(&strides[2])) {
+              basic_loop_separable_1d_vertical<scalar_t>(data, strides, n, weights_precision);
+            } else {
+              basic_loop_separable_1d_horizontal<scalar_t>(data, strides, n, weights_precision);
+            }
           }
         };
         iter.for_each(loop);
